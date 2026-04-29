@@ -244,9 +244,6 @@
   .cw-temp { font-size: 1.3rem; font-weight: 300; color: var(--hs-text); letter-spacing: -0.02em; }
   .cw-desc { font-size: 0.68rem; color: var(--hs-text-muted); margin-top: 2px; }
   .cw-meta { font-size: 0.62rem; color: var(--hs-text-muted); margin-top: 3px; }
-  /* weather-desc / weather-meta kept as aliases for JS compatibility */
-  .weather-desc { font-size: 0.7rem; color: var(--hs-text-muted); margin-top: 4px; }
-  .weather-meta { font-size: 0.65rem; color: var(--hs-text-muted); margin-top: 5px; }
 
   /* ── CURRENCY ── */
   .rate-display {
@@ -336,6 +333,12 @@
     font-size: 2rem;
     box-shadow: 0 4px 20px rgba(122, 157, 184, 0.3);
     transition: box-shadow 0.3s;
+    position: relative;
+    overflow: hidden;
+  }
+  .player-art::before {
+    content: '♫';
+    color: rgba(255,255,255,0.8);
   }
   .player-art.spinning { animation: artPulse 1.8s ease-in-out infinite; }
   @keyframes artPulse {
@@ -387,7 +390,8 @@
   }
   .player-status { font-size: 0.65rem; color: var(--hs-text-muted); display: flex; align-items: center; gap: 5px; }
   .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--hs-border); transition: background 0.3s; }
-  .status-dot.live { background: var(--hs-error); animation: pulse 1.5s infinite; }
+  .status-dot.live { background: var(--hs-success); animation: pulse 1.5s infinite; }
+  .status-dot.loading { background: var(--hs-accent); animation: pulse 1s infinite; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
 
   /* ── SCHEDULE HERO ── */
@@ -645,7 +649,6 @@
   .modal-btn.secondary { background: var(--hs-sidebar); color: var(--hs-text); }
   .modal-btn.secondary:hover { background: var(--hs-border); }
 
-
   /* ── THEME PICKER ── */
   .theme-picker {
     display: grid;
@@ -865,7 +868,7 @@
   <!-- MUSIC PLAYER -->
   <div class="card" id="lofiCard">
     <div class="card-header">
-      <span class="card-title">Lofi Radio</span>
+      <span class="card-title">Jellyfin Stream</span>
       <div class="player-status">
         <div class="status-dot" id="statusDot"></div>
         <span id="statusText">Idle</span>
@@ -874,8 +877,8 @@
     <div class="player-wrap">
       <div class="player-art" id="playerArt"></div>
       <div class="player-info">
-        <div class="player-title">Lofi Chill Beats</div>
-        <div class="player-sub">zeno.fm · Live Stream</div>
+        <div class="player-title">Bljhlabs Music</div>
+        <div class="player-sub">Jellyfin Media Server</div>
       </div>
       <div class="player-controls">
         <button class="play-btn" id="playBtn">▶</button>
@@ -886,8 +889,8 @@
         <span class="vol-icon">🔊</span>
       </div>
     </div>
-    <audio id="audioPlayer" preload="none">
-      <source src="https://stream.zeno.fm/0r0xa792kwzuv" type="audio/mpeg" />
+    <audio id="audioPlayer" preload="none" crossorigin="anonymous">
+      <source src="https://jellyfin.bljhlabs.qzz.io/Items/e03769c4d132ae02a87cfa9fe08bbf94/Download?api_key=1e73be5d0ab7461aa58d14246c9c5a26" type="audio/mpeg" />
     </audio>
   </div>
 
@@ -1007,6 +1010,8 @@
 // ═══════════════════════════════════════
 //  CONSTANTS & STATE
 // ═══════════════════════════════════════
+const JELLYFIN_URL = "https://jellyfin.bljhlabs.qzz.io/Items/e03769c4d132ae02a87cfa9fe08bbf94/Download?api_key=1e73be5d0ab7461aa58d14246c9c5a26";
+
 const TIMEZONES = [
   'Africa/Johannesburg','America/Chicago','America/Los_Angeles','America/New_York',
   'America/Sao_Paulo','Asia/Bangkok','Asia/Dubai','Asia/Ho_Chi_Minh','Asia/Hong_Kong',
@@ -1221,26 +1226,37 @@ const playerArt = $('playerArt');
 const statusDot = $('statusDot');
 const statusText = $('statusText');
 
+function setPlayerStatus(state, label) {
+  statusDot.classList.remove('live', 'loading');
+  if (state === 'playing') statusDot.classList.add('live');
+  if (state === 'loading') statusDot.classList.add('loading');
+  statusText.textContent = label;
+}
+
 playBtn.addEventListener('click', () => {
   if (!isPlaying) {
-    audio.src = 'https://stream.zeno.fm/0r0xa792kwzuv';
+    setPlayerStatus('loading', 'Loading...');
+    // Setting source explicitly on play to ensure fresh connection
+    audio.src = JELLYFIN_URL;
     audio.play().then(() => {
       isPlaying = true;
       playBtn.textContent = '⏸';
       playerArt.classList.add('spinning');
-      statusDot.classList.add('live');
-      statusText.textContent = 'Live';
-    }).catch(() => {
-      showToast('Could not play stream. Check connection.');
+      setPlayerStatus('playing', 'Streaming');
+    }).catch((e) => {
+      console.error(e);
+      setPlayerStatus('idle', 'Error');
+      showToast('Could not play stream. Check your network or API key.');
     });
   } else {
     audio.pause();
+    // We clear src to stop background download buffering
     audio.src = '';
+    audio.load(); 
     isPlaying = false;
     playBtn.textContent = '▶';
     playerArt.classList.remove('spinning');
-    statusDot.classList.remove('live');
-    statusText.textContent = 'Idle';
+    setPlayerStatus('idle', 'Idle');
   }
 });
 
@@ -1254,10 +1270,17 @@ audio.addEventListener('error', () => {
     isPlaying = false;
     playBtn.textContent = '▶';
     playerArt.classList.remove('spinning');
-    statusDot.classList.remove('live');
-    statusText.textContent = 'Error';
-    showToast('Stream error. Try refreshing.');
+    setPlayerStatus('idle', 'Stream Error');
+    showToast('Media error. Try clicking play again.');
   }
+});
+
+audio.addEventListener('waiting', () => {
+    if(isPlaying) setPlayerStatus('loading', 'Buffering...');
+});
+
+audio.addEventListener('playing', () => {
+    if(isPlaying) setPlayerStatus('playing', 'Streaming');
 });
 
 // ═══════════════════════════════════════
@@ -1450,8 +1473,6 @@ function parseCSVText(text) {
   const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2) throw new Error('CSV must have a header row and at least one data row');
 
-  // Normalise header names: lowercase, strip spaces & punctuation
-  // so "Start Time", "starttime", "start" all resolve the same way
   const rawHeaders = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
   const headers = rawHeaders.map(h => h.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9]/g, ''));
 
@@ -1472,13 +1493,11 @@ function parseCSVText(text) {
   const iE2    = findCol('end2');
 
   if (iDate < 0 || iStart < 0 || iEnd < 0) {
-    throw new Error('CSV must include columns for date, start time, and end time. ' +
-      'Accepted names: date | start / "start time" | end / "end time"');
+    throw new Error('CSV must include columns for date, start time, and end time.');
   }
 
   const timeRe = /^\d{1,2}:\d{2}(:\d{2})?$/;
 
-  // Proper CSV line splitter that respects quoted fields containing commas
   function splitCSVLine(line) {
     const result = [];
     let cur = '', inQ = false;
@@ -1491,14 +1510,11 @@ function parseCSVText(text) {
     return result;
   }
 
-  // Normalise HH:MM:SS -> HH:MM
   function normTime(t) {
     const m = t && t.match(/^(\d{1,2}:\d{2})(:\d{2})?$/);
     return m ? m[1] : t;
   }
 
-  // Group rows by date so that two rows for the same date
-  // become a single shift entry with two segments
   const byDate = {};
 
   for (let i = 1; i < lines.length; i++) {
@@ -1518,7 +1534,6 @@ function parseCSVText(text) {
     byDate[date].segs.push({ s: normTime(start), e: normTime(end) });
     if (!byDate[date].loc && loc) byDate[date].loc = loc;
 
-    // Also handle optional inline start2/end2 columns (old template style)
     if (iS2 >= 0 && iE2 >= 0) {
       const s2 = normTime((cols[iS2] || '').trim());
       const e2 = normTime((cols[iE2] || '').trim());
@@ -1533,7 +1548,7 @@ function parseCSVText(text) {
     .map(([date, v]) => ({ date, segs: v.segs, loc: v.loc }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  if (validated.length === 0) throw new Error('No valid rows found — check date (YYYY-MM-DD) and time (HH:MM) formats');
+  if (validated.length === 0) throw new Error('No valid rows found');
   return validated;
 }
 
@@ -1547,10 +1562,9 @@ function applyCSVImport(text) {
   saveLS('wb_schedule', schedule);
   renderSchedule();
   closeSettings();
-  showToast(`Imported ${entries.length} shift${entries.length !== 1 ? 's' : ''} from CSV ✓`);
+  showToast(`Imported ${entries.length} shifts ✓`);
 }
 
-// Drop zone
 const csvDropZone = $('csvDropZone');
 const csvFileInput = $('csvFileInput');
 
@@ -1565,7 +1579,7 @@ csvDropZone.addEventListener('drop', e => {
   const reader = new FileReader();
   reader.onload = ev => {
     try { applyCSVImport(ev.target.result); }
-    catch(err) { showToast('CSV error: ' + err.message); console.error(err); }
+    catch(err) { showToast('CSV error: ' + err.message); }
   };
   reader.readAsText(file);
 });
@@ -1576,20 +1590,16 @@ csvFileInput.addEventListener('change', () => {
   const reader = new FileReader();
   reader.onload = ev => {
     try { applyCSVImport(ev.target.result); }
-    catch(err) { showToast('CSV error: ' + err.message); console.error(err); }
+    catch(err) { showToast('CSV error: ' + err.message); }
   };
   reader.readAsText(file);
-  csvFileInput.value = ''; // reset so same file can be re-imported
+  csvFileInput.value = '';
 });
 
-// Template download
 $('csvDownloadTemplateBtn').addEventListener('click', () => {
   const header = 'Date,Day,Start Time,End Time,Title,Location';
   const rows = [
     '2026-05-01,Friday,07:00,13:00,My Shift,Brussels Belgium',
-    '2026-05-02,Saturday,08:00,13:00,My Shift,Brussels Belgium',
-    '2026-05-03,Sunday,00:00,07:00,My Shift,Brussels Belgium',
-    '2026-05-03,Sunday,08:00,13:00,My Shift,Brussels Belgium',
   ];
   const csv = [header, ...rows].join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
@@ -1599,7 +1609,6 @@ $('csvDownloadTemplateBtn').addEventListener('click', () => {
   a.click();
   URL.revokeObjectURL(url);
 });
-
 
 // ═══════════════════════════════════════
 //  EARNINGS INPUTS
@@ -1630,16 +1639,13 @@ function init() {
   loadSettings();
   populateTZSelects();
 
-  // Apply saved theme
   applyTheme(settings.theme || 'light');
 
-  // Restore hours + rate
   const savedHours = loadLS('wb_hours', 0);
   const savedRate = loadLS('wb_hourly', settings.hourlyRate);
   $('hoursInput').value = savedHours || '';
   $('hourlyRate').value = savedRate || settings.hourlyRate;
 
-  // Restore cached rate
   const cachedRate = loadLS('wb_rate', null);
   if (cachedRate) {
     eurThbRate = cachedRate.rate;
@@ -1652,23 +1658,18 @@ function init() {
   renderSchedule();
   fetchWeather();
   fetchExchangeRate();
-
-  // Clock tick every 10s (already set once above, only one interval)
 }
 
 init();
 
-// Stretch Lofi Radio card to full width when it sits alone on a row
+// Stretch Lofi Radio card logic
 (function() {
   const card = $('lofiCard');
   const grid = card.parentElement;
   let ticking = false;
 
   function checkLofiRow() {
-    // Strip card-wide first so we measure the natural grid layout
     card.classList.remove('card-wide');
-
-    // Force a synchronous layout read
     const cardTop = card.getBoundingClientRect().top;
     const siblings = Array.from(grid.children).filter(
       el => el !== card && !el.classList.contains('card-wide')
