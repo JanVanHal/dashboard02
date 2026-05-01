@@ -1281,6 +1281,7 @@ audioFileInput.addEventListener('change', (e) => {
 
 function loadTrack(idx) {
   if (playlist.length === 0) return;
+  // Ensure the index wraps around for continuous repeat all
   if (idx < 0) idx = playlist.length - 1;
   if (idx >= playlist.length) idx = 0;
   currentTrackIdx = idx;
@@ -1341,8 +1342,14 @@ nextBtn.addEventListener('click', () => {
   loadTrack(currentTrackIdx + 1);
 });
 
+// Continuous Repeat Logic: Play the next track when one ends
 audio.addEventListener('ended', () => {
-  loadTrack(currentTrackIdx + 1);
+  let nextIdx = currentTrackIdx + 1;
+  // If we reach the end of the playlist, loop back to the first track
+  if (nextIdx >= playlist.length) {
+    nextIdx = 0;
+  }
+  loadTrack(nextIdx);
   playAudio();
 });
 
