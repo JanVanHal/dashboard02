@@ -422,8 +422,17 @@
   }
   .hero-date { font-size: 0.6rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; opacity: 0.8; margin-bottom: 8px; }
   .hero-shift { font-size: 1.9rem; font-weight: 300; letter-spacing: -0.03em; margin-bottom: 6px; }
-  .hero-loc { font-size: 0.75rem; opacity: 0.85; margin-bottom: 12px; display: flex; align-items: center; gap: 5px; }
-  .hero-tags { display: flex; gap: 8px; flex-wrap: wrap; }
+  .hero-loc { font-size: 0.75rem; opacity: 0.85; display: flex; align-items: center; gap: 5px; }
+  .hero-tags { 
+    position: absolute;
+    right: 22px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px; 
+  }
   .hero-tag {
     background: rgba(255,255,255,0.15);
     border: 1px solid rgba(255,255,255,0.22);
