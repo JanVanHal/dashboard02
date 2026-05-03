@@ -786,6 +786,76 @@
     color: var(--hs-text-muted);
     margin-bottom: 10px;
   }
+
+  /* Loop button active state */
+  .refresh-btn.loop-active {
+    color: var(--hs-accent) !important;
+    opacity: 1 !important;
+  }
+
+  /* Playlist editor panel */
+  .playlist-panel {
+    display: none;
+    flex-direction: column;
+    gap: 0;
+    margin-top: 12px;
+    border: 1px solid var(--hs-border);
+    border-radius: var(--hs-radius);
+    overflow: hidden;
+    max-height: 220px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+  .playlist-panel.open { display: flex; }
+  .playlist-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--hs-border);
+    background: var(--hs-sidebar);
+    transition: background 0.15s;
+    cursor: pointer;
+  }
+  .playlist-item:last-child { border-bottom: none; }
+  .playlist-item:hover { background: var(--hs-accent-soft); }
+  .playlist-item.active { background: var(--hs-accent-soft); }
+  .playlist-item-num {
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: var(--hs-text-muted);
+    min-width: 18px;
+    text-align: right;
+  }
+  .playlist-item-name {
+    flex: 1;
+    font-size: 0.75rem;
+    color: var(--hs-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .playlist-item-name.active-track { color: var(--hs-accent); font-weight: 600; }
+  .playlist-remove-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--hs-text-muted);
+    padding: 2px 4px;
+    border-radius: 4px;
+    transition: color 0.2s, background 0.2s;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .playlist-remove-btn:hover { color: var(--hs-error); background: rgba(201,112,112,0.1); }
+  .playlist-empty {
+    padding: 14px 12px;
+    font-size: 0.75rem;
+    color: var(--hs-text-muted);
+    text-align: center;
+    background: var(--hs-sidebar);
+  }
 </style>
 </head>
 <body>
@@ -884,6 +954,9 @@
           <span id="statusText">Idle</span>
         </div>
         <div style="width: 1px; height: 12px; background: var(--hs-border);"></div>
+        <button class="refresh-btn" id="loopBtn" title="Toggle continuous play" style="font-size: 1rem; opacity: 0.4;" aria-pressed="false">🔁</button>
+        <button class="refresh-btn" id="editPlaylistBtn" title="Edit playlist" style="font-size: 1rem;">✏️</button>
+        <button class="refresh-btn" id="clearPlaylistBtn" title="Clear playlist" style="font-size: 1rem;">🗑</button>
         <button class="refresh-btn" id="addAudioBtn" title="Add MP3 files" style="font-size: 1rem;">➕</button>
         <input type="file" id="audioFileInput" accept="audio/*" multiple style="display:none" />
       </div>
@@ -906,6 +979,10 @@
       </div>
     </div>
     <audio id="audioPlayer" preload="none"></audio>
+    <!-- Playlist editor panel -->
+    <div class="playlist-panel" id="playlistPanel">
+      <div class="playlist-empty" id="playlistEmpty">No tracks loaded. Add files with ➕</div>
+    </div>
   </div>
 
   <!-- WORK SCHEDULE — wide card -->
@@ -1342,13 +1419,115 @@ nextBtn.addEventListener('click', () => {
   loadTrack(currentTrackIdx + 1);
 });
 
-// Continuous Repeat Logic: Play the next track when one ends
-audio.addEventListener('ended', () => {
-  let nextIdx = currentTrackIdx + 1;
-  // If we reach the end of the playlist, loop back to the first track
-  if (nextIdx >= playlist.length) {
-    nextIdx = 0;
+// Continuous play state (toggleable by user)
+let continuousPlay = false;
+
+const loopBtn = $('loopBtn');
+const editPlaylistBtn = $('editPlaylistBtn');
+const clearPlaylistBtn = $('clearPlaylistBtn');
+const playlistPanel = $('playlistPanel');
+
+// Toggle continuous play
+loopBtn.addEventListener('click', () => {
+  continuousPlay = !continuousPlay;
+  loopBtn.classList.toggle('loop-active', continuousPlay);
+  loopBtn.style.opacity = continuousPlay ? '1' : '0.4';
+  loopBtn.setAttribute('aria-pressed', String(continuousPlay));
+  showToast(continuousPlay ? 'Continuous play on' : 'Continuous play off');
+});
+
+// Toggle edit playlist panel
+editPlaylistBtn.addEventListener('click', () => {
+  const isOpen = playlistPanel.classList.toggle('open');
+  editPlaylistBtn.style.color = isOpen ? 'var(--hs-accent)' : '';
+  if (isOpen) renderPlaylistPanel();
+});
+
+// Clear playlist
+clearPlaylistBtn.addEventListener('click', () => {
+  if (playlist.length === 0) { showToast('Playlist is already empty'); return; }
+  if (!confirm('Clear all tracks from the playlist?')) return;
+  pauseAudio();
+  playlist.forEach(t => { if (t.url) URL.revokeObjectURL(t.url); });
+  playlist = [];
+  currentTrackIdx = 0;
+  audio.src = '';
+  trackTitle.textContent = 'No tracks loaded';
+  trackSub.textContent = 'Add files to start playing';
+  setPlayerStatus('idle', 'Idle');
+  renderPlaylistPanel();
+  showToast('Playlist cleared');
+});
+
+// Render the editable playlist list
+function renderPlaylistPanel() {
+  const empty = $('playlistEmpty');
+  // Remove all except the empty placeholder
+  Array.from(playlistPanel.children).forEach(el => {
+    if (el !== empty) playlistPanel.removeChild(el);
+  });
+  if (playlist.length === 0) {
+    empty.style.display = '';
+    return;
   }
+  empty.style.display = 'none';
+  playlist.forEach((track, idx) => {
+    const item = document.createElement('div');
+    item.className = 'playlist-item' + (idx === currentTrackIdx ? ' active' : '');
+    item.innerHTML = `
+      <span class="playlist-item-num">${idx + 1}</span>
+      <span class="playlist-item-name${idx === currentTrackIdx ? ' active-track' : ''}" title="${track.name.replace(/"/g,'&quot;')}">${track.name}</span>
+      <button class="playlist-remove-btn" data-idx="${idx}" title="Remove track">\u2715</button>`;
+    // Click on item name area -> jump to track
+    item.querySelector('.playlist-item-name').addEventListener('click', () => {
+      loadTrack(idx);
+      if (!isPlaying) playAudio();
+    });
+    // Remove button
+    item.querySelector('.playlist-remove-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      const removingCurrent = idx === currentTrackIdx;
+      if (playlist[idx].url) URL.revokeObjectURL(playlist[idx].url);
+      playlist.splice(idx, 1);
+      if (playlist.length === 0) {
+        pauseAudio();
+        audio.src = '';
+        trackTitle.textContent = 'No tracks loaded';
+        trackSub.textContent = 'Add files to start playing';
+        setPlayerStatus('idle', 'Idle');
+        currentTrackIdx = 0;
+      } else {
+        if (removingCurrent) {
+          currentTrackIdx = Math.min(idx, playlist.length - 1);
+          loadTrack(currentTrackIdx);
+        } else if (idx < currentTrackIdx) {
+          currentTrackIdx--;
+        }
+        trackSub.textContent = `Track ${currentTrackIdx + 1} of ${playlist.length}`;
+      }
+      renderPlaylistPanel();
+      showToast('Track removed');
+    });
+    playlistPanel.appendChild(item);
+  });
+}
+
+// Continuous Repeat Logic: respects continuousPlay toggle
+audio.addEventListener('ended', () => {
+  if (!continuousPlay) {
+    // Just advance once (stop at end of playlist)
+    const nextIdx = currentTrackIdx + 1;
+    if (nextIdx < playlist.length) {
+      loadTrack(nextIdx);
+      playAudio();
+    } else {
+      pauseAudio();
+      setPlayerStatus('idle', 'Done');
+    }
+    return;
+  }
+  let nextIdx = currentTrackIdx + 1;
+  if (nextIdx >= playlist.length) nextIdx = 0;
   loadTrack(nextIdx);
   playAudio();
 });
